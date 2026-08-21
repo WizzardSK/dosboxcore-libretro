@@ -1,5 +1,6 @@
 // This is copyrighted software. More information is at the end of this file.
 #include "libretro.h"
+#include <streams/file_stream.h>
 #include "CoreOptions.h"
 #include "control.h"
 #include "deps/char8_t-remediation/char8_t-remediation.h"
@@ -947,6 +948,18 @@ auto retro_api_version() -> unsigned
 
 void retro_set_environment(const retro_environment_t cb)
 {
+    /* Take the frontend's VFS when it offers one: CD images are opened through
+       it (see BinaryFile), so content only the frontend can open - Android SAF
+       content:// URIs - becomes loadable. */
+    {
+        retro_vfs_interface_info vfs_iface_info;
+        vfs_iface_info.required_interface_version = 1;
+        vfs_iface_info.iface = nullptr;
+        if (cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs_iface_info)) {
+            filestream_vfs_init(&vfs_iface_info);
+        }
+    }
+
     environ_cb = cb;
 
     bool allow_no_game = true;
@@ -1174,8 +1187,16 @@ auto retro_load_game(const retro_game_info* const game) -> bool
             game_path = load_path;
         }
         catch (const std::filesystem::filesystem_error& e) {
-            retro::logError("Failed to load \"{}\": {}", game->path, e.what());
-            return false;
+            /* A frontend VFS path is not something the host filesystem can
+               resolve - Android SAF hands out content:// URIs, which only the
+               VFS understands - so pass those through untouched instead of
+               refusing them. Anything else is a genuine failure. */
+            if (std::string(game->path).find("://") == std::string::npos) {
+                retro::logError("Failed to load \"{}\": {}", game->path, e.what());
+                return false;
+            }
+            load_path = std::filesystem::path(game->path);
+            game_path = load_path;
         }
     }
 
