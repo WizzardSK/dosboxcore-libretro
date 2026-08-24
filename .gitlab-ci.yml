@@ -133,12 +133,6 @@ libretro-build-linux-x64:
   extends:
     - .libretro-linux-x64-make-default
     - .core-defs
-
-# Linux ARM 64-bit
-libretro-build-linux-aarch64:
-  extends:
-    - .libretro-linux-aarch64-make-default
-    - .core-defs
   variables:
     CC: gcc-9
     CXX: g++-9
@@ -153,6 +147,34 @@ libretro-build-linux-aarch64:
     WITH_FLUIDSYNTH: 1
     WITH_VOODOO: 1
   image: $CI_SERVER_HOST:5050/libretro-infrastructure/libretro-build-amd64-ubuntu:xenial-gcc9
+  script:
+    - python3 -m pip install --no-cache-dir meson==0.55.3 ninja
+    - touch libretro/deps/mpg123/aclocal.m4
+    - sleep 1
+    - find libretro/deps/mpg123/ -name "*.in" -exec touch '{}' \;
+    - sleep 1
+    - touch libretro/deps/mpg123/configure
+    - make -C ${MAKEFILE_PATH} -f ${MAKEFILE} clean
+    - make -C ${MAKEFILE_PATH} -f ${MAKEFILE} deps
+    - LDFLAGS="-Wl,--no-undefined" make -C ${MAKEFILE_PATH} -f ${MAKEFILE} -j${NUMPROC}
+    - strip ${MAKEFILE_PATH}/${CORENAME}_libretro.so
+
+# Linux ARM 64-bit
+libretro-build-linux-aarch64:
+  extends:
+    - .libretro-linux-aarch64-make-default
+    - .core-defs
+  variables:
+    platform: unix
+    BUNDLED_AUDIO_CODECS: 1
+    BUNDLED_LIBSNDFILE: 1
+    BUNDLED_SDL: 1
+    CMAKE_GENERATOR: Ninja
+    STATIC_LIBCXX: 1
+    WITH_BASSMIDI: 1
+    WITH_DYNAREC: arm64
+    WITH_FLUIDSYNTH: 1
+    WITH_VOODOO: 1
   script:
     - python3 -m pip install --no-cache-dir meson==0.55.3 ninja
     - touch libretro/deps/mpg123/aclocal.m4
