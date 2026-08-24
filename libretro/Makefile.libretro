@@ -24,6 +24,11 @@ PKG_CONFIG_FLAGS ?=
 STATIC_PACKAGES ?= 0
 # CMake generator.
 CMAKE_GENERATOR ?= Ninja
+# CMake 4 removed compatibility with cmake_minimum_required() values below 3.5, which several
+# bundled dependencies still declare. This is passed through the environment rather than as a -D
+# flag so that nested configure runs (fluidsynth spawns one for its gentables ExternalProject)
+# inherit it as well. CMake releases older than 3.31.6 ignore it.
+CMAKE_POLICY_VERSION_MINIMUM ?= 3.5
 # Meson executable.
 MESON ?= meson
 # Ninja executable.
@@ -283,6 +288,7 @@ ifdef EXTRA_PACKAGES
 	INCFLAGS += `$(PKGCONFIG) $(PKG_CONFIG_FLAGS) --cflags-only-I $(EXTRA_PACKAGES)`
 endif
 export CMAKE_GENERATOR
+export CMAKE_POLICY_VERSION_MINIMUM
 
 # We append these flags here so they appear after all other flags, otherwise they might not work
 # correctly.
