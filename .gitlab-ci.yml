@@ -177,10 +177,14 @@ libretro-build-linux-aarch64:
     WITH_VOODOO: 1
   script:
     # flac and opusfile bootstrap themselves with autogen.sh, and the aarch64
-    # image has no libtool - the dependency build stops on "Missing program
+    # image has no autotools - the dependency build stops on "Missing program
     # 'libtool'" before flac is configured. The x64 and i686 jobs pin
-    # xenial-gcc9 images that carry the autotools already.
-    - apt-get update -qq && apt-get install -y --no-install-recommends autoconf automake libtool
+    # xenial-gcc9 images that carry them already.
+    #
+    # libtool-bin is the one that matters for that message: flac's autogen.sh
+    # tests `command -v libtool`, and on Debian the libtool package ships only
+    # libtoolize and the m4 macros - /usr/bin/libtool lives in libtool-bin.
+    - apt-get update -qq && apt-get install -y --no-install-recommends autoconf automake libtool libtool-bin
     - python3 -m pip install --no-cache-dir meson==0.55.3 ninja
     - touch libretro/deps/mpg123/aclocal.m4
     - sleep 1
