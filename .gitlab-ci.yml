@@ -41,6 +41,11 @@ include:
   - project: 'libretro-infrastructure/ci-templates'
     file: '/osx-x64.yml'
 
+  #################################### MISC ##################################
+  # webOS 32-bit (LGTV)
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/webos-make.yml'
+
   ################################## CELLULAR ################################
   # Android
   - project: 'libretro-infrastructure/ci-templates'
@@ -264,6 +269,65 @@ libretro-build-osx-x64:
     - make -C ${MAKEFILE_PATH} -f ${MAKEFILE} -j${NUMPROC}
     - strip -u -r -S ${MAKEFILE_PATH}/${CORENAME}_libretro.dylib
     - rm -rf "${HOMEBREW_PREFIX}"
+
+#################################### MISC ####################################
+# webOS 32-bit (LGTV)
+libretro-build-webos-armv7a:
+  extends:
+    - .libretro-webos-armv7a-make-default
+    - .core-defs
+  variables:
+    platform: unix
+    TARGET_TRIPLET: arm-webos-linux-gnueabi
+    # The CMake dependencies need the buildroot toolchain file. Repeat the
+    # C++ standard flag the Makefile would otherwise have set here.
+    EXTRA_CMAKE_FLAGS: -DCMAKE_CXX_STANDARD=17 -DPKG_CONFIG_EXECUTABLE=/usr/bin/pkg-config -DCMAKE_TOOLCHAIN_FILE=/developer/arm-webos-linux-gnueabi_sdk-buildroot/share/buildroot/toolchainfile.cmake
+    BUNDLED_AUDIO_CODECS: 1
+    BUNDLED_LIBSNDFILE: 1
+    BUNDLED_SDL: 1
+    CMAKE_GENERATOR: Ninja
+    STATIC_LIBCXX: 1
+    WITH_BASSMIDI: 1
+    WITH_DYNAREC: arm
+    # ALSA sequencer MIDI is a host-side feature and there is no alsa in the
+    # dependency prefix; MIDI here goes through FluidSynth and BASSMIDI.
+    WITH_ALSA_MIDI: 0
+    WITH_FLUIDSYNTH: 1
+    WITH_VOODOO: 1
+  script:
+    # The SDK's environment-setup, which the template sources, points CC and
+    # friends at the prefixed cross tools. Hand the Makefile the bare names
+    # instead and let it build the prefixed ones itself from TARGET_TRIPLET,
+    # the same way the MXE jobs do - otherwise every one of them ends up
+    # doubled, as in arm-webos-linux-gnueabi-arm-webos-linux-gnueabi-ld.
+    - export AR=ar AS=as CC=gcc CXX=g++ LD=ld
+    # The SDK ships pkg-config as a wrapper that rewrites every path it
+    # reports to sit under the sysroot, and it sets that up itself, so the
+    # environment cannot talk it out of it. That is right for the SDK's own
+    # libraries and wrong for the ones we build next to the source tree,
+    # which is all of them here - SDL_net was handed a sysroot-prefixed SDL
+    # include path that does not exist. Use the plain pkg-config and point
+    # it at nothing but our own .pc files.
+    - export PKG_CONFIG=/usr/bin/pkg-config
+    - export PKG_CONFIG_LIBDIR="$PWD/${MAKEFILE_PATH}/deps_bin/lib/pkgconfig"
+    # Same autotools timestamp dance as the other cross jobs: the checkout
+    # gives configure and its inputs the same mtime, and the deps then try
+    # to re-run autoconf, which is not in this image.
+    - touch libretro/deps/sdl_net/aclocal.m4
+    - touch libretro/deps/mpg123/aclocal.m4
+    - sleep 1
+    - find libretro/deps/sdl_net/ -name "*.in" -exec touch '{}' \;
+    - find libretro/deps/mpg123/ -name "*.in" -exec touch '{}' \;
+    - sleep 1
+    - touch libretro/deps/sdl_net/configure
+    - touch libretro/deps/mpg123/configure
+    # CMAKE and PKGCONFIG go on the command line rather than in the
+    # environment: the Makefile assigns both with = and that beats an
+    # environment variable. The SDK carries a cmake of its own, and its
+    # pkg-config is the wrapper described above.
+    - make -C ${MAKEFILE_PATH} -f ${MAKEFILE} CMAKE=/usr/bin/cmake PKGCONFIG=/usr/bin/pkg-config clean
+    - make -C ${MAKEFILE_PATH} -f ${MAKEFILE} CMAKE=/usr/bin/cmake PKGCONFIG=/usr/bin/pkg-config deps
+    - LDFLAGS="-Wl,--no-undefined" make -C ${MAKEFILE_PATH} -f ${MAKEFILE} CMAKE=/usr/bin/cmake PKGCONFIG=/usr/bin/pkg-config -j${NUMPROC}
 
 ################################### CELLULAR #################################
 # Android ARMv7a

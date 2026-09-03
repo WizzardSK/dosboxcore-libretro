@@ -7,6 +7,19 @@ EXTRA_PACKAGES := fluidsynth $(EXTRA_PACKAGES)
 COMMONFLAGS += -DWITH_FLUIDSYNTH
 
 # Always a release build because debug build creates broken .pc file with mingw.
+#
+# fluidsynth generates some of its tables by compiling make_tables and running
+# it, as a sub-project with no toolchain file of its own - so it picks its
+# compiler out of the environment, which in a cross build is the cross compiler,
+# and the build then tries to run an ARM binary on the machine doing the
+# building. $(CC_FOR_BUILD) is the autoconf name for "the compiler for this
+# machine" and the libretro webOS template already exports it; when it is set,
+# hand it to the build step, which is where that sub-project configures itself.
+# CMAKE_TOOLCHAIN_FILE has to go with it: an SDK that exports one in the
+# environment would otherwise still cross-compile the generator, since cmake
+# 3.21 and later read that variable as the default for the cache entry. The
+# outer build takes its toolchain file from the cache it was configured with,
+# so dropping it here costs it nothing.
 $(FLUIDSYNTH): $(LIBSNDFILE)
 	mkdir -p "$(FLUIDSYNTH_BUILD_DIR)"
 	cd "$(FLUIDSYNTH_BUILD_DIR)" \
@@ -54,7 +67,8 @@ $(FLUIDSYNTH): $(LIBSNDFILE)
 	    -Denable-framework=OFF \
 	    $(EXTRA_CMAKE_FLAGS) \
 	    "$(CURDIR)/deps/fluidsynth-sans-glib" \
-	&& VERBOSE=1 $(CMAKE) --build . --config Release --target install -j $(NUMPROC)
+	&& $(if $(CC_FOR_BUILD),env -u CMAKE_TOOLCHAIN_FILE CC="$(CC_FOR_BUILD)" CXX="$(CXX_FOR_BUILD)") \
+	    VERBOSE=1 $(CMAKE) --build . --config Release --target install -j $(NUMPROC)
 	touch "$@"
 
 .PHONY: fluidsynth
