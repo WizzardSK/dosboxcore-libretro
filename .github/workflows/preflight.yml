@@ -1,0 +1,71 @@
+# Fork-only preflight for the webOS job. Runs inside ubuntu:noble carrying
+# exactly the packages the buildbot's webOS image installs, so that anything
+# the job needs on top of them has to come from the job itself.
+name: preflight (webos)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - preflight-**
+
+jobs:
+  webos-armv7a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    container:
+      image: ubuntu:noble
+      options: --user root
+    env:
+      SDK_ROOT: /developer/arm-webos-linux-gnueabi_sdk-buildroot
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: What the image ships (libretro-build-webos Dockerfile)
+        run: |
+          apt-get update -qy
+          apt-get install -y sudo curl wget file make git cmake pkg-config vim ninja-build g++ build-essential libclang-dev
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: webOS SDK
+        run: |
+          url=$(curl -sL https://api.github.com/repos/cscd98/buildroot-nc4/releases/latest \
+            | grep -o 'https://[^"]*arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz' | head -1)
+          [ -n "$url" ] || url=$(curl -sL https://api.github.com/repos/openlgtv/buildroot-nc4/releases/latest \
+            | grep -o 'https://[^"]*arm-webos-linux-gnueabi_sdk-buildroot-x86_64.tar.gz' | head -1)
+          echo "SDK: $url"
+          mkdir -p /developer
+          curl -sL "$url" | tar -xz -C /developer
+          "$SDK_ROOT/relocate-sdk.sh"
+
+      - name: Build (replays the job script)
+        run: |
+          . "$SDK_ROOT/environment-setup"
+          export CC_FOR_BUILD=/usr/bin/gcc CXX_FOR_BUILD=/usr/bin/g++
+          # --- the line this branch adds to the job ---
+          apt-get update -qy
+          apt-get install -qy autoconf automake libtool libtool-bin gettext
+          # --- rest is the job script verbatim ---
+          export AR=ar AS=as CC=gcc CXX=g++ LD=ld
+          export PKG_CONFIG=/usr/bin/pkg-config
+          export PKG_CONFIG_LIBDIR="$PWD/libretro/deps_bin/lib/pkgconfig"
+          export platform=unix TARGET_TRIPLET=arm-webos-linux-gnueabi
+          export BUNDLED_AUDIO_CODECS=1 BUNDLED_LIBSNDFILE=1 BUNDLED_SDL=1
+          export CMAKE_GENERATOR=Ninja STATIC_LIBCXX=1 WITH_BASSMIDI=1
+          export WITH_ALSA_MIDI=0 WITH_DYNAREC=arm WITH_FLUIDSYNTH=1 WITH_VOODOO=1
+          export EXTRA_CMAKE_FLAGS="-DCMAKE_CXX_STANDARD=17 -DPKG_CONFIG_EXECUTABLE=/usr/bin/pkg-config -DCMAKE_TOOLCHAIN_FILE=$SDK_ROOT/share/buildroot/toolchainfile.cmake"
+          touch libretro/deps/sdl_net/aclocal.m4 libretro/deps/mpg123/aclocal.m4
+          sleep 1
+          find libretro/deps/sdl_net/ libretro/deps/mpg123/ -name "*.in" -exec touch '{}' \;
+          sleep 1
+          touch libretro/deps/sdl_net/configure libretro/deps/mpg123/configure
+          make -C libretro -f Makefile.libretro CMAKE=/usr/bin/cmake PKGCONFIG=/usr/bin/pkg-config clean
+          make -C libretro -f Makefile.libretro CMAKE=/usr/bin/cmake PKGCONFIG=/usr/bin/pkg-config deps
+          LDFLAGS="-Wl,--no-undefined" make -C libretro -f Makefile.libretro CMAKE=/usr/bin/cmake PKGCONFIG=/usr/bin/pkg-config -j$(nproc)
+
+      - name: Check
+        run: |
+          ls -l libretro/dosbox_core_libretro.so
+          file libretro/dosbox_core_libretro.so | grep -q "ARM"
