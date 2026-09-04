@@ -295,6 +295,12 @@ libretro-build-webos-armv7a:
     WITH_FLUIDSYNTH: 1
     WITH_VOODOO: 1
   script:
+    # FLAC's dependency recipe runs its autogen.sh unconditionally, and the
+    # webOS image carries no autotools at all - the SDK is a cross toolchain,
+    # not a build environment. gettext is part of it: autogen.sh looks for
+    # autopoint before anything else.
+    - apt-get update -qy
+    - apt-get install -qy autoconf automake libtool libtool-bin gettext
     # The SDK's environment-setup, which the template sources, points CC and
     # friends at the prefixed cross tools. Hand the Makefile the bare names
     # instead and let it build the prefixed ones itself from TARGET_TRIPLET,
